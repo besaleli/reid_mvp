@@ -16,15 +16,10 @@ class YOLOObjectDetection(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     model: YOLO
-    batch_size: int = 32
+    batch_size: int = 64
     
-    def __call__(self, prediction: Prediction, db: Database) -> Prediction:
-        """Run."""
-        if prediction.frames is None:
-            raise ValueError("Frames must be present to do object detection.")
-
-        prediction.detected_entities = []
-        
+    def preprocess(self, prediction: Prediction) -> list:
+        """Preprocess frames."""
         # convert inputs to RGB
         logger.debug("Converting frames to RGB...")
         imgs_rgb = [
@@ -36,6 +31,17 @@ class YOLOObjectDetection(BaseModel):
         imgs_bgr = [
             cv2.cvtColor(img, cv2.COLOR_RGB2BGR) for img in imgs_rgb
         ]
+
+        return imgs_bgr
+    
+    def __call__(self, prediction: Prediction, db: Database) -> Prediction:
+        """Run."""
+        if prediction.frames is None:
+            raise ValueError("Frames must be present to do object detection.")
+
+        prediction.detected_entities = []
+
+        imgs_bgr = self.preprocess(prediction)
 
         results: List[Results] = []
         
