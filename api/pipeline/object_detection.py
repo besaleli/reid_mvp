@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict
 from ultralytics import YOLO
 from ultralytics.engine.results import Results
 import cv2
-from ..models import Prediction, Frame, ObjectDetection
+from ..models import Prediction, ObjectDetection
 from ..db import Database
 
 logger = logging.getLogger()

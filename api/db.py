@@ -12,7 +12,7 @@ See data models in `api/db.py`
 
 from typing import List
 from uuid import UUID
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from .models import Video
 
 class Database(BaseModel):
