@@ -4,7 +4,12 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "av>=14.4.0",
+    "pillow>=11.2.1",
+    "pydantic>=2.11.5",
+    "ultralytics>=8.3.145",
+]
 
 [dependency-groups]
 dev = [
