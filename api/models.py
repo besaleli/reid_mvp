@@ -4,9 +4,7 @@ from typing import List, Optional
 from uuid import UUID, uuid4
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict
-import numpy as np
 import av
-from av.container import InputContainer
 
 class HasID(BaseModel):
     """ID."""
