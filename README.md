@@ -99,9 +99,9 @@ For each identity cluster:
 
 - CLIP embeddings → PCA (50D)
 - For each cluster, compare successive scene buckets using energy distance under cosine metric
-- **Energy distance threshold**: 0.48 (empirically tuned)
+- **Energy distance threshold**: 0.40 (empirically tuned)
 - **Minimum bucket size**: 10 frames required for analysis
-- **Stratified sampling**: Top 100 frames by normalized inter-arrival time (IAT) per scene bucket
+- **Stratified sampling**: Top 150 frames by normalized inter-arrival time (IAT) per scene bucket
 
 ```
 energy_distance_cosine(A, B) = 2 * E[cosine(A, B)] - E[cosine(A, A)] - E[cosine(B, B)]
@@ -188,7 +188,7 @@ For implementation, I would keep all of the ML-specific stuff in Python (possibl
 - **Cross-video assumptions**: Fixed n_clusters=2 in SpectralClustering regardless of actual identity count
 
 # TODO
-- [ ] Cross-video anomaly detections (this is only a matter of appending the past few scenes from the preceding video, if they exist)
+- [x] Cross-video anomaly detections (this is only a matter of appending the past few scenes from the preceding video, if they exist)
 - [ ] -1 out of bounds error in scene generation bug
 - [ ] Update `persons` endpoint query (this is already 90% written)
 - [ ] Animation >:) 

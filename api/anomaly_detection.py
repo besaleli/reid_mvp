@@ -9,9 +9,12 @@ from scipy.spatial.distance import cdist
 from sklearn.decomposition import PCA
 
 APPEARANCE_QUERY = """
-with final as (
+-- Combine all CTEs under a single WITH clause
+with
+final as (
     select
         s.video_id,
+        v.uploaded_at,
         f.video_frame_index,
         s.bucket_index,
         f.timestamp_ms,
@@ -21,41 +24,78 @@ with final as (
     left join frame f on f.video_id = s.video_id
     left join detection d on d.frame_id = f.id
     left join intravideo_object_ids i on i.detection_id = d.id
+    left join video v on s.video_id = v.id
     where
         s.video_id = ?
         and f.video_frame_index between s.start_frame and s.end_frame
         and not i.is_bad_frame
         and s.cluster_id = i.cluster_id
     qualify count(*) over (partition by s.video_id, s.cluster_id, s.bucket_index) > 10
+),
+prev_id as (
+    SELECT id
+    FROM video
+    WHERE uploaded_at < (
+        SELECT uploaded_at
+        FROM video
+        WHERE id = ?
+    )
+    ORDER BY uploaded_at DESC
+    LIMIT 1
+),
+data as (
+    select
+        s.video_id,
+        v.uploaded_at,
+        f.video_frame_index,
+        s.bucket_index,
+        f.timestamp_ms,
+        s.cluster_id,
+        d.clip_embedding
+    from scene s
+    left join frame f on f.video_id = s.video_id
+    left join detection d on d.frame_id = f.id
+    left join intravideo_object_ids i on i.detection_id = d.id
+    left join video v on s.video_id = v.id
+    where
+        s.video_id in (select * from prev_id)
+        and f.video_frame_index between s.start_frame and s.end_frame
+        and not i.is_bad_frame
+        and s.cluster_id = i.cluster_id
+    qualify count(*) over (partition by s.video_id, s.cluster_id, s.bucket_index) > 10
+),
+most_recent_frames as (
+    select distinct bucket_index from data order by 1 desc limit ?
 )
 
+-- First query
 select
     f.video_id,
+    f.uploaded_at,
     f.video_frame_index,
     f.bucket_index,
     f.timestamp_ms,
-    l.cluster_id, -- use global cluster id
+    l.cluster_id,
     f.clip_embedding
 from final f
-left join latest_global_object_ids l on f.cluster_id=l.intravideo_cluster_id and f.video_id=l.video_id
+left join latest_global_object_ids l on f.cluster_id = l.intravideo_cluster_id and f.video_id = l.video_id
+
+union all
+
+-- Second query
+select
+    f.video_id,
+    f.uploaded_at,
+    f.video_frame_index,
+    f.bucket_index,
+    f.timestamp_ms,
+    l.cluster_id,
+    f.clip_embedding
+from data f
+left join latest_global_object_ids l on f.cluster_id = l.intravideo_cluster_id and f.video_id = l.video_id
+where
+    f.bucket_index in (select * from most_recent_frames)
 """
-
-def normalize_buckets(prev: list, curr: list):
-    """Correct arbitrary bucket identification and merge two from separate dfs if necessary"""
-    prev = [(0, x) for x in prev]
-    curr = [(1, x) for x in curr]
-    
-    l = sorted(prev + curr)
-    
-    vals = {}
-    count = 0
-    
-    for x1, y1 in l:
-        if (x1, y1) not in vals:
-            vals[(x1, y1)] = count
-            count += 1
-
-    return [vals[i] for i in l]
 
 class AppearanceAnomalyDetector(BaseModel):
     """Detect appearance anomalies across all clusters in a video."""
@@ -65,20 +105,19 @@ class AppearanceAnomalyDetector(BaseModel):
     video_id: uuid.UUID
     threshold: float = 0.48
     stratified_sample_k: int = 100
+    prev_scenes_considered: int = 2
     df: pd.DataFrame = pd.DataFrame()
     
     def _preprocess_df(self) -> Optional[pd.DataFrame]:
         """Add inter-arrival times"""
-        df = self.conn.execute(APPEARANCE_QUERY, [self.video_id.hex]).df()
-        
-        if df is None:
-            return None
+        df = self.conn.execute(APPEARANCE_QUERY, [self.video_id.hex, self.video_id.hex, self.prev_scenes_considered]).df()
+        df['vb_index'] = list(zip(df['video_id'], df['bucket_index']))
         
         dfs = []
-        
-        for cluster, dff in df.groupby("cluster_id"):
+
+        for _, dff in df.groupby(["video_id", "cluster_id"]):
             c = dff.sort_values("video_frame_index")
-            c["iat"] = c["timestamp_ms"].diff().fillna(0)
+            c["iat"] = c["timestamp_ms"].diff().fillna(1)
             c["iat_norm"] = c.groupby("bucket_index")["iat"].transform(lambda x: (x + 1e-3) / (x.sum() + 1e-6))
             c = c.groupby("bucket_index").filter(lambda g: g.shape[0] > 10)
             c = (
@@ -104,13 +143,12 @@ class AppearanceAnomalyDetector(BaseModel):
     def _process_cluster(self, df: pd.DataFrame) -> pd.DataFrame | None:
         pca_50 = PCA(n_components=50)
         df["clip_pca_50"] = list(pca_50.fit_transform(df["clip_embedding"].to_list()))
-        df["vb_index"] = [(x, y) for x, y in zip(df['video_id'], df['bucket_index'])]
 
         appearance_buckets = []
         appearance_matrices = []
         distances = [0]
 
-        for (vid, bidx), group in df.groupby("vb_index"):
+        for (vid, bidx), group in df.sort_values(by=["uploaded_at", "bucket_index"]).groupby("vb_index"):
             appearance_buckets.append((vid, bidx))
             appearance_matrices.append(np.stack(group["clip_pca_50"].to_list()))
 
@@ -130,6 +168,8 @@ class AppearanceAnomalyDetector(BaseModel):
 
         df['energy_distance'] = df['vb_index'].map(distance_map)
         df["is_anomaly"] = df["vb_index"].map(anomaly_map)
+        df = df[df['video_id'] == self.video_id]
+
         return df
 
     def _energy_distance_cosine(self, X: np.ndarray, Y: np.ndarray) -> float:
