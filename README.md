@@ -192,3 +192,4 @@ For implementation, I would keep all of the ML-specific stuff in Python (possibl
 - [ ] -1 out of bounds error in scene generation bug
 - [ ] Update `persons` endpoint query (this is already 90% written)
 - [ ] Animation >:) 
+- [ ] Dockerfile?
