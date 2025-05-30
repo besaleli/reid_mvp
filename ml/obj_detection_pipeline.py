@@ -4,6 +4,7 @@ import uuid
 from pydantic import BaseModel, Field, ConfigDict
 import numpy as np
 import pandas as pd
+import time
 import duckdb
 import ruptures as rpt
 import cv2
@@ -63,6 +64,7 @@ class ObjectDetection(BaseModel):
     
     video_path: str
     video_id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    video_uploaded_at: float = Field(default_factory=time.time)
     
     frames: List[Frame] = Field(default_factory=list)
     is_irregular: List[bool] = Field(default_factory=list)
@@ -238,7 +240,8 @@ class ObjectDetection(BaseModel):
                 "id": self.video_id,
                 "filepath": self.video_path,
                 "duration_ms": max(self.frames, key=lambda i: i.timestamp_ms).timestamp_ms,
-                "n_frames": len(self.frames)
+                "n_frames": len(self.frames),
+                "uploaded_at": self.video_uploaded_at
             }
         ]
         
@@ -276,46 +279,6 @@ class ObjectDetection(BaseModel):
         return pd.DataFrame(data)
 
 db = duckdb.connect(database="data/data.db")
-
-ctq = """
-create table if not exists video (
-    id uuid not null,
-    filepath varchar not null,
-    duration_ms int not null,
-    n_frames int not null,
-);
-
-create table if not exists frame (
-    id uuid not null,
-    video_id uuid not null,
-    video_frame_index int not null,
-    n_objects_detected int not null,
-    is_irregular bool not null,
-    timestamp_ms float not null
-);
-
-create table if not exists detection (
-    id uuid not null,
-    frame_id uuid not null,
-    conf float not null,
-    x1 float not null,
-    y1 float not null,
-    x2 float not null,
-    y2 float not null,
-    osnet_embedding float[512] not null,
-    clip_embedding float[512] not null
-);
-
-create table if not exists reid_cluster (
-    id uuid not null,
-    person_detection_id uuid not null,
-    cluster_id int not null,
-    is_bad_frame bool not null
-);
-"""
-
-db.sql(ctq)
-db.commit()
 
 for vpath in ["data/video_1.mp4", "data/video_2.mp4"]:
     preds = (

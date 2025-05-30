@@ -37,6 +37,11 @@ with cpf as (
     order by 1
 ),
 
+-- frames with more than one object detected, and those objects belong to the same cluster
+-- are probably incorrectly clustered.
+-- this will ultimately be mitigated when using a graph-based clustering method or other
+-- constraint-aware ReID detection method, but is a nice heuristic for now.
+-- sidenote: can probably be used to evaluate how well a clustering method works
 bad_frames as (
     select
         clusters.frame_id
@@ -48,6 +53,7 @@ bad_frames as (
     qualify count(*) over (partition by clusters.frame_id) > 1
 ),
 
+-- any of these problematic frames are labeled as not good
 cleaned as (
     select
         *,
@@ -61,21 +67,21 @@ cleaned as (
 
 select
     uuidv4() as id,
-    cleaned.id as person_detection_id,
+    cleaned.id as detection_id,
     cleaned.cluster_id,
     cleaned.is_bad_frame
 from cleaned
 left join detection on cleaned.id=detection.id
 """
 
-class ClusteringPipeline(BaseModel):
+class IntraVideoObjectIdPipeline(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     conn: duckdb.DuckDBPyConnection
     video_id: uuid.UUID
     df: Optional[pd.DataFrame] = None
     
-    def create_clusters(self) -> 'ClusteringPipeline':
+    def create_clusters(self) -> 'IntraVideoObjectIdPipeline':
         """Create clusters."""
         query = GET_DATA.format(self.video_id.hex)
         df = self.conn.sql(query).df()
@@ -94,10 +100,10 @@ db = duckdb.connect("data/data.db")
 video_ids = [i[0] for i in db.sql("select distinct id from video").fetchall()]
 
 for video_id in video_ids:
-    pipe = ClusteringPipeline(conn=db, video_id=video_id).create_clusters()
-    db.register("reid_cluster_temp", pipe.df)
-    db.execute("insert into reid_cluster select * from reid_cluster_temp")
-    db.unregister("reid_cluster_temp")
+    pipe = IntraVideoObjectIdPipeline(conn=db, video_id=video_id).create_clusters()
+    db.register("intravideo_object_ids_temp", pipe.df)
+    db.execute("insert into intravideo_object_ids select * from intravideo_object_ids_temp")
+    db.unregister("intravideo_object_ids_temp")
     db.commit()
 
 db.close()
