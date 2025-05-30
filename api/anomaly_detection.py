@@ -9,26 +9,53 @@ from scipy.spatial.distance import cdist
 from sklearn.decomposition import PCA
 
 APPEARANCE_QUERY = """
+with final as (
+    select
+        s.video_id,
+        f.video_frame_index,
+        s.bucket_index,
+        f.timestamp_ms,
+        s.cluster_id,
+        d.clip_embedding
+    from scene s
+    left join frame f on f.video_id = s.video_id
+    left join detection d on d.frame_id = f.id
+    left join intravideo_object_ids i on i.detection_id = d.id
+    where
+        s.video_id = ?
+        and f.video_frame_index between s.start_frame and s.end_frame
+        and not i.is_bad_frame
+        and s.cluster_id = i.cluster_id
+    qualify count(*) over (partition by s.video_id, s.cluster_id, s.bucket_index) > 10
+)
+
 select
-    s.video_id,
-    s.bucket_index,
-    s.start_frame,
-    s.end_frame,
+    f.video_id,
     f.video_frame_index,
+    f.bucket_index,
     f.timestamp_ms,
-    s.cluster_id,
-    d.clip_embedding
-from scene s
-left join frame f on f.video_id = s.video_id
-left join detection d on d.frame_id = f.id
-left join intravideo_object_ids i on i.detection_id = d.id
-where
-    s.video_id = ?
-    and f.video_frame_index between s.start_frame and s.end_frame
-    and not i.is_bad_frame
-    and s.cluster_id = i.cluster_id
-qualify count(*) over (partition by s.video_id, s.cluster_id, s.bucket_index) > 10
+    l.cluster_id, -- use global cluster id
+    f.clip_embedding
+from final f
+left join latest_global_object_ids l on f.cluster_id=l.intravideo_cluster_id and f.video_id=l.video_id
 """
+
+def normalize_buckets(prev: list, curr: list):
+    """Correct arbitrary bucket identification and merge two from separate dfs if necessary"""
+    prev = [(0, x) for x in prev]
+    curr = [(1, x) for x in curr]
+    
+    l = sorted(prev + curr)
+    
+    vals = {}
+    count = 0
+    
+    for x1, y1 in l:
+        if (x1, y1) not in vals:
+            vals[(x1, y1)] = count
+            count += 1
+
+    return [vals[i] for i in l]
 
 class AppearanceAnomalyDetector(BaseModel):
     """Detect appearance anomalies across all clusters in a video."""
@@ -77,13 +104,14 @@ class AppearanceAnomalyDetector(BaseModel):
     def _process_cluster(self, df: pd.DataFrame) -> pd.DataFrame | None:
         pca_50 = PCA(n_components=50)
         df["clip_pca_50"] = list(pca_50.fit_transform(df["clip_embedding"].to_list()))
+        df["vb_index"] = [(x, y) for x, y in zip(df['video_id'], df['bucket_index'])]
 
         appearance_buckets = []
         appearance_matrices = []
         distances = [0]
 
-        for bidx, group in df.groupby("bucket_index"):
-            appearance_buckets.append(bidx)
+        for (vid, bidx), group in df.groupby("vb_index"):
+            appearance_buckets.append((vid, bidx))
             appearance_matrices.append(np.stack(group["clip_pca_50"].to_list()))
 
         for i in range(1, len(appearance_buckets)):
@@ -100,8 +128,8 @@ class AppearanceAnomalyDetector(BaseModel):
             b: d for b, d in zip(appearance_buckets, distances)
         }
 
-        df['energy_distance'] = df['bucket_index'].map(distance_map)
-        df["is_anomaly"] = df["bucket_index"].map(anomaly_map)
+        df['energy_distance'] = df['vb_index'].map(distance_map)
+        df["is_anomaly"] = df["vb_index"].map(anomaly_map)
         return df
 
     def _energy_distance_cosine(self, X: np.ndarray, Y: np.ndarray) -> float:
