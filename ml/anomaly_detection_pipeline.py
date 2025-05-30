@@ -8,6 +8,7 @@ from sklearn.decomposition import PCA
 
 APPEARANCE_QUERY = """
 select
+    s.video_id,
     s.bucket_index,
     s.start_frame,
     s.end_frame,
