@@ -1,4 +1,5 @@
 """Anomaly detection."""
+from typing import Optional
 import duckdb
 import uuid
 import pandas as pd
@@ -23,7 +24,6 @@ left join detection d on d.frame_id = f.id
 left join intravideo_object_ids i on i.detection_id = d.id
 where
     s.video_id = ?
-    and s.cluster_id = ?
     and f.video_frame_index between s.start_frame and s.end_frame
     and not i.is_bad_frame
     and s.cluster_id = i.cluster_id
@@ -39,37 +39,42 @@ class AppearanceAnomalyDetector(BaseModel):
     threshold: float = 0.48
     stratified_sample_k: int = 100
     df: pd.DataFrame = pd.DataFrame()
+    
+    def _preprocess_df(self) -> Optional[pd.DataFrame]:
+        """Add inter-arrival times"""
+        df = self.conn.execute(APPEARANCE_QUERY, [self.video_id.hex]).df()
+        
+        if df is None:
+            return None
+        
+        dfs = []
+        
+        for cluster, dff in df.groupby("cluster_id"):
+            c = dff.sort_values("video_frame_index")
+            c["iat"] = c["timestamp_ms"].diff().fillna(0)
+            c["iat_norm"] = c.groupby("bucket_index")["iat"].transform(lambda x: (x + 1e-3) / (x.sum() + 1e-6))
+            c = c.groupby("bucket_index").filter(lambda g: g.shape[0] > 10)
+            c = (
+                c.sort_values("iat_norm", ascending=False)
+                .groupby("bucket_index")
+                .head(self.stratified_sample_k)
+                .sort_values("video_frame_index")
+            )
+            
+            if not c.empty:
+                dfs.append(c)
+        
+        return pd.concat(dfs)
+            
 
     def detect(self) -> "AppearanceAnomalyDetector":
-        cluster_ids = [
-            row[0] for row in
-            self.conn.execute("select distinct cluster_id from scene where video_id = ?", [self.video_id]).fetchall()
-        ]
+        df = self._preprocess_df()
 
-        results = [self._process_cluster(cid) for cid in cluster_ids]
+        results = [self._process_cluster(dff) for _, dff in df.groupby("cluster_id")]
         self.df = pd.concat([r for r in results if r is not None], ignore_index=True) if results else pd.DataFrame()
         return self
 
-    def _process_cluster(self, cluster_id: int) -> pd.DataFrame | None:
-        df = self.conn.execute(APPEARANCE_QUERY, [self.video_id.hex, cluster_id]).df()
-
-        if df.empty:
-            return None
-
-        df = df.sort_values("video_frame_index")
-        df["iat"] = df["timestamp_ms"].diff().fillna(0)
-        df["iat_norm"] = df.groupby("bucket_index")["iat"].transform(lambda x: (x + 1e-3) / (x.sum() + 1e-6))
-        df = df.groupby("bucket_index").filter(lambda g: g.shape[0] > 10)
-        df = (
-            df.sort_values("iat_norm", ascending=False)
-            .groupby("bucket_index")
-            .head(self.stratified_sample_k)
-            .sort_values("video_frame_index")
-        )
-
-        if df.empty:
-            return None
-
+    def _process_cluster(self, df: pd.DataFrame) -> pd.DataFrame | None:
         pca_50 = PCA(n_components=50)
         df["clip_pca_50"] = list(pca_50.fit_transform(df["clip_embedding"].to_list()))
 
