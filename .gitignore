@@ -1,5 +1,6 @@
 # Data folder
 data/
+test.ipynb
 
 # PyTorch weights
 *.pt

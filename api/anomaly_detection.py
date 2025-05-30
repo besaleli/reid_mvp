@@ -15,20 +15,18 @@ select
     s.end_frame,
     f.video_frame_index,
     f.timestamp_ms,
-    gid.cluster_id,
+    s.cluster_id,
     d.clip_embedding
 from scene s
 left join frame f on f.video_id = s.video_id
 left join detection d on d.frame_id = f.id
 left join intravideo_object_ids i on i.detection_id = d.id
-left join latest_global_object_ids gid on f.video_id=gid.video_id
 where
     s.video_id = ?
     and s.cluster_id = ?
     and f.video_frame_index between s.start_frame and s.end_frame
     and not i.is_bad_frame
     and s.cluster_id = i.cluster_id
-    and i.cluster_id=gid.intravideo_cluster_id
 qualify count(*) over (partition by s.video_id, s.cluster_id, s.bucket_index) > 10
 """
 
@@ -92,7 +90,12 @@ class AppearanceAnomalyDetector(BaseModel):
             b: bool(d > self.threshold)
             for b, d in zip(appearance_buckets, distances)
         }
+        
+        distance_map = {
+            b: d for b, d in zip(appearance_buckets, distances)
+        }
 
+        df['energy_distance'] = df['bucket_index'].map(distance_map)
         df["is_anomaly"] = df["bucket_index"].map(anomaly_map)
         return df
 
