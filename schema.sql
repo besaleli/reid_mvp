@@ -50,5 +50,4 @@ create or replace view latest_global_object_ids as
         *
     from intervideo_object_ids
     where
-        created_at = (select max(created_at) from intervideo_object_ids)
-        and is_match;
+        created_at = (select max(created_at) from intervideo_object_ids);
