@@ -13,18 +13,20 @@ select
     s.end_frame,
     f.video_frame_index,
     f.timestamp_ms,
-    i.cluster_id,
+    gid.cluster_id,
     d.clip_embedding
 from scene s
 left join frame f on f.video_id = s.video_id
 left join detection d on d.frame_id = f.id
 left join intravideo_object_ids i on i.detection_id = d.id
+left join latest_global_object_ids gid on f.video_id=gid.video_id
 where
     s.video_id = ?
     and s.cluster_id = ?
     and f.video_frame_index between s.start_frame and s.end_frame
     and not i.is_bad_frame
     and s.cluster_id = i.cluster_id
+    and i.cluster_id=gid.intravideo_cluster_id
 qualify count(*) over (partition by s.video_id, s.cluster_id, s.bucket_index) > 10
 """
 
@@ -107,6 +109,7 @@ for video_id in video_ids:
     df = detector.df
     print(df.columns)
     print(df[df['is_anomaly']]['bucket_index'].value_counts())
-    print(df.groupby('bucket_index')['is_anomaly'].value_counts())
+    for i, dff in df.groupby("cluster_id"):
+        print(dff.groupby('bucket_index')['is_anomaly'].value_counts())
 
 db.close()
