@@ -186,3 +186,9 @@ For implementation, I would keep all of the ML-specific stuff in Python (possibl
 - **Temporal consistency**: No explicit trajectory smoothing or temporal constraints in clustering
 - **YOLO failure modes**: Merged detections handled heuristically rather than systematically
 - **Cross-video assumptions**: Fixed n_clusters=2 in SpectralClustering regardless of actual identity count
+
+# TODO
+- [ ] Cross-video anomaly detections (this is only a matter of appending the past few scenes from the preceding video, if they exist)
+- [ ] -1 out of bounds error in scene generation bug
+- [ ] Update `persons` endpoint query (this is already 90% written)
+- [ ] Animation >:) 
