@@ -1,9 +1,8 @@
 create table if not exists video (
     id uuid not null,
-    name varchar not null,
-    duration_ms float not null,
+    filepath varchar not null,
+    duration_ms int not null,
     n_frames int not null,
-    results_path varchar not null
 );
 
 create table if not exists frame (
@@ -11,11 +10,11 @@ create table if not exists frame (
     video_id uuid not null,
     video_frame_index int not null,
     n_objects_detected int not null,
-    is_irregular_detection bool not null,
+    is_irregular bool not null,
     timestamp_ms float not null
 );
 
-create table if not exists person_detection (
+create table if not exists detection (
     id uuid not null,
     frame_id uuid not null,
     conf float not null,
