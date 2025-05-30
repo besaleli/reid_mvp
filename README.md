@@ -120,6 +120,8 @@ energy_distance_cosine(A, B) = 2 * E[cosine(A, B)] - E[cosine(A, A)] - E[cosine(
 
 **Heuristic payoff:** Sampling sparse detection moments captures behavioral salience without relying on explicit object recognition or intent modeling. In other words, the man is more likely to have sparser captured frames when interacting with the woman due to the low IoU tolerance I set, which also happen to be the times where he's not occluding the object he's carrying (this happens in the second video when he carries the silver briefcase on the opposite side). This is a massive assumption which is tolerable for this MVP's scope but the sampling methodology would be revisited in the future.
 
+The energy distance formula can be loosely understood as a nonparametric form of KL divergence. This is similar to another technique for capturing semantic drift, where jensen-shannon divergence is captured between distributions of embeddings at two points in time (the distribution can either be calculated as a discrete distribution of clusters – affinity propagation is used for this frequently – or a gaussian KDE).
+
 ## Database Schema & ETL Pipeline
 
 The system uses DuckDB with a relational schema designed for modular pipeline processing:
@@ -151,7 +153,7 @@ The system uses DuckDB with a relational schema designed for modular pipeline pr
 - The woman should produce 0 anomalies throughout
 
 ### 🚨 Expected Anomalies
-Man's cluster should spike in energy distance he changes appearance (e.g., is carrying a different object)
+Man's cluster should spike in energy distance every time he changes appearance (i.e., is carrying a different object)
 
 ### 🔍 Anomaly Record Structure
 Each anomaly record includes:
