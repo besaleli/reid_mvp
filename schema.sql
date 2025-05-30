@@ -45,6 +45,17 @@ create table if not exists intervideo_object_ids (
     created_at float not null
 );
 
+create table if not exists scene (
+    video_id uuid not null,
+    cluster_id int not null,
+    start_frame int not null,
+    end_frame int not null,
+    bucket_index int not null,
+    start_timestamp_ms float not null,
+    end_timestamp_ms float not null,
+    n_frames int not null
+);
+
 create or replace view latest_global_object_ids as
     select
         *
