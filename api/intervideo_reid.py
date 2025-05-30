@@ -59,7 +59,7 @@ class CrossVideoReID(BaseModel):
         
         # if only one video in the database, no need to run clustering
         if df['video_id'].nunique() <= 1:
-            for (vid, pid), group in df.groupby(['intravideo_cluster_id']):
+            for (vid, pid), group in df.groupby(['video_id', 'intravideo_cluster_id']):
                 matches.append({
                     'id': uuid.uuid4(),
                     'video_id': vid,

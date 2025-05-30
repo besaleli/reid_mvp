@@ -169,11 +169,11 @@ Each anomaly record includes:
 - Replace KMeans with graph-constrained or temporal-aware clustering
 - Add comprehensive error handling and validation throughout pipeline
 - Make hard-coded parameters (cluster count, thresholds) configurable
-
-**Research directions:**
-- Integrate gait or pose-based re-identification
-- Shift anomaly detection from heuristic to learned scoring (e.g., VAE, one-class SVM)
+- Independent model deployments (this is very much not containerized!!)
+- Integrate gait or pose-based re-identification for long-term ReID
 - Unify tracklets, scene segments, and global ReID into a graph-based framework
+
+For implementation, I would keep all of the ML-specific stuff in Python (possibly containerized or exposed via PyO3) since the tooling is mature, but write the infrastructure/API in Rust. If this were a gRPC server, I'd use `tonic`, otherwise `axum`. If we want to keep the level of interpretability afforded by the granularity of the data stored, this would need really high-performance reads/writes, which is easily achievable using `diesel-rs` (assuming pg is being used). Multithreading/async is also really easy on this stack, especially if using a `tokio` runtime.
 
 ## Known Limitations
 
